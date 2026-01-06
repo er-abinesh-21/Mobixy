@@ -129,13 +129,14 @@ function HomePage() {
         setIsSubmitting(true);
 
         try {
-            // Create FormData for file upload
-            const submitData = new FormData();
-            submitData.append('websiteUrl', formData.websiteUrl);
-            submitData.append('appName', formData.appName);
-            submitData.append('packageName', formData.packageName);
-            submitData.append('buildType', formData.buildType);
-            submitData.append('icon', iconFile);
+            // Send as JSON (Icon upload temporarily disabled for serverless compatibility)
+            // To enable icon upload, we'd need to upload to blob storage first or use a multipart parser
+            const submitData = {
+                websiteUrl: formData.websiteUrl,
+                appName: formData.appName,
+                packageName: formData.packageName,
+                buildType: formData.buildType
+            };
 
             const response = await buildService.startBuild(submitData);
 

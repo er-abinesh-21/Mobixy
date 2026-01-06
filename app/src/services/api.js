@@ -40,12 +40,8 @@ export const buildService = {
      * @param {FormData} formData - Form data with build configuration
      * @returns {Promise<Object>} Build response with buildId
      */
-    async startBuild(formData) {
-        const response = await api.post('/api/build', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-        });
+    async startBuild(data) {
+        const response = await api.post('/api/build', data);
         return response;
     },
 

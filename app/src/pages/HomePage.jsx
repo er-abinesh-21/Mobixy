@@ -141,7 +141,8 @@ function HomePage() {
             const response = await buildService.startBuild(submitData);
 
             toast.success('Build started successfully!');
-            navigate(`/build/${response.buildId}`);
+            // Use EAS Build ID if available (real build), otherwise local ID (simulation)
+            navigate(`/build/${response.easBuildId || response.buildId}`);
         } catch (error) {
             console.error('Build error:', error);
             toast.error(error.message || 'Failed to start build. Please try again.');

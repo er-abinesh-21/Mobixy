@@ -46,38 +46,41 @@ export default async function handler(req, res) {
         }
 
         // Create build record
-        const buildId = nanoid(12);
+        // Create build record (stored locally for reference, but real source of truth is Expo)
+        const localBuildId = nanoid(12);
+
+        let easBuildData;
+        try {
+            // Trigger Real Build
+            easBuildData = await triggerEasBuild({ websiteUrl, appName, packageName, buildType });
+        } catch (err) {
+            console.error('Failed to trigger EAS build:', err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+
         const build = {
-            id: buildId,
-            status: 'queued',
+            id: localBuildId,
+            easBuildId: easBuildData.id,
+            status: easBuildData.status, // e.g. 'queued'
             websiteUrl,
             appName,
             packageName,
             buildType,
             startedAt: new Date().toISOString(),
             logs: [
-                { timestamp: new Date().toISOString(), message: 'Build queued successfully', type: 'info' },
+                { timestamp: new Date().toISOString(), message: 'Build queued on Expo EAS', type: 'info' },
             ],
+            expoUrl: `https://expo.dev/accounts/er-abinesh-21/projects/mobixy/builds/${easBuildData.id}`
         };
 
-        // Store build (use Redis in production)
-        // await redis.set(`build:${buildId}`, JSON.stringify(build), { ex: 86400 });
-        builds.set(buildId, build);
-
-        // In production, trigger build via:
-        // 1. Vercel Cron Job
-        // 2. Inngest background job
-        // 3. QStash async message
-        // 4. Direct EAS API call
-
-        // For demo, simulate build progress
-        simulateBuildAsync(buildId, build);
+        builds.set(localBuildId, build);
 
         return res.status(201).json({
             success: true,
-            buildId,
-            message: 'Build started successfully',
-            status: 'queued',
+            buildId: localBuildId, // We return our local ID for the frontend to poll status
+            easBuildId: easBuildData.id,
+            message: 'Build started successfully on Expo Cloud',
+            status: easBuildData.status,
         });
 
     } catch (error) {
@@ -137,46 +140,61 @@ function validateInput({ websiteUrl, appName, packageName, buildType }) {
  * Simulate build process (demo only)
  * In production, this would trigger EAS Build API
  */
-async function simulateBuildAsync(buildId, build) {
-    const steps = [
-        { delay: 2000, message: 'Preparing build environment...' },
-        { delay: 3000, message: 'Processing app configuration...' },
-        { delay: 2000, message: 'Generating app resources...' },
-        { delay: 4000, message: 'Starting EAS Cloud build...' },
-        { delay: 5000, message: 'Compiling JavaScript bundle...' },
-        { delay: 6000, message: 'Building Android package...' },
-        { delay: 3000, message: 'Signing application...' },
-        { delay: 2000, message: 'Uploading artifacts...' },
-    ];
+/**
+ * Trigger Real EAS Build
+ */
+async function triggerEasBuild({ websiteUrl, appName, packageName, buildType }) {
+    const EXPO_TOKEN = process.env.EXPO_TOKEN;
+    const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID;
 
-    build.status = 'building';
-    builds.set(buildId, build);
-
-    for (const step of steps) {
-        await sleep(step.delay);
-        build.logs.push({
-            timestamp: new Date().toISOString(),
-            message: step.message,
-            type: 'info',
-        });
-        builds.set(buildId, build);
+    if (!EXPO_TOKEN || !EAS_PROJECT_ID) {
+        throw new Error('Server misconfiguration: Missing EXPO_TOKEN or EAS_PROJECT_ID');
     }
 
-    // Complete
-    build.status = 'finished';
-    // This is a DEMO/SIMULATION.
-    // In a real environment, this would be the actual EAS build artifact URL.
-    // For now, we point to a safe placeholder to avoid "Invalid UUID" errors from Expo.
-    build.downloadUrl = `https://mobixy-cloud.vercel.app/`;
-    build.expoUrl = `https://expo.dev/accounts/er-abinesh-21/projects/mobixy/builds`;
-    build.duration = calculateDuration(build.startedAt);
-    build.logs.push({
-        timestamp: new Date().toISOString(),
-        message: '✅ Build completed successfully!',
-        type: 'success',
+    // 1. Prepare Build Profile
+    // We strictly use the 'preview' profile for APKs and 'production' for AABs logic from eas.json
+    const profile = buildType === 'apk' ? 'preview' : 'production';
+
+    // 2. Call Expo API to Start Build
+    // Docs: https://docs.expo.dev/eas/api/
+    const response = await fetch('https://api.expo.dev/v2/builds', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${EXPO_TOKEN}`,
+        },
+        body: JSON.stringify({
+            projectId: EAS_PROJECT_ID,
+            platform: 'android',
+            profile: profile,
+            // We can pass environment variables to the build process
+            // The app's app.config.js usually reads these to configure the app dynamically
+            metadata: {
+                appVersion: '1.0.0',
+                appBuildVersion: '1',
+                gitCommitHash: 'latest',
+                credentialsSource: 'remote', // Use credentials stored in EAS
+            },
+            // Environment variables injected into the build environment
+            env: {
+                APP_NAME: appName,
+                APP_PACKAGE: packageName,
+                WEBSITE_URL: websiteUrl,
+            }
+        }),
     });
-    builds.set(buildId, build);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Expo API Error:', errorText);
+        throw new Error(`Failed to start build: ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.data; // Returns the build object
 }
+
+// ... existing helpers ...
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));

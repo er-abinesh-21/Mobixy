@@ -164,8 +164,11 @@ async function simulateBuildAsync(buildId, build) {
 
     // Complete
     build.status = 'finished';
-    build.downloadUrl = `https://expo.dev/artifacts/eas/${buildId}.apk`;
-    build.expoUrl = `https://expo.dev/builds/${buildId}`;
+    // This is a DEMO/SIMULATION.
+    // In a real environment, this would be the actual EAS build artifact URL.
+    // For now, we point to a safe placeholder to avoid "Invalid UUID" errors from Expo.
+    build.downloadUrl = `https://mobixy-cloud.vercel.app/`;
+    build.expoUrl = `https://expo.dev/accounts/er-abinesh-21/projects/mobixy/builds`;
     build.duration = calculateDuration(build.startedAt);
     build.logs.push({
         timestamp: new Date().toISOString(),
